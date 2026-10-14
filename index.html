@@ -204,11 +204,12 @@
     #roster tr:hover td { background: none; }
     #roster tr.filler { display: none; }
     #roster td { border: none; padding: 1px 0; font-size: 0.8125rem; }
-    #roster td:nth-child(1) { display: none; }
-    #roster td:nth-child(2) { display: inline; font-weight: 600; font-size: 0.875rem; }
-    #roster td:nth-child(3) { display: inline; margin-left: 5px; }
-    #roster td:nth-child(4) { color: var(--text-secondary); margin-top: 3px; }
-    #roster td:nth-child(5) { color: var(--text-muted); font-size: 0.75rem; }
+    #roster td:nth-child(1) { display: none; }                       /* ลำดับ */
+    #roster td:nth-child(2) { display: inline; font-weight: 600; font-size: 0.875rem; }  /* ชื่อ */
+    #roster td:nth-child(3) { display: inline; margin-left: 5px; }   /* นามสกุล */
+    #roster td:nth-child(4) { color: var(--text-secondary); margin-top: 3px; }           /* สถานศึกษา */
+    #roster td:nth-child(5) { color: var(--text-secondary); }        /* รายการแข่งขัน */
+    #roster td:nth-child(6) { color: var(--text-muted); font-size: 0.75rem; }            /* รอบเวลา */
     .pager { gap: 5px; }
     .pager button { min-width: 30px; padding: 5px 8px; }
     .pager .spacer { flex-basis: 100%; height: 0; }
@@ -235,7 +236,9 @@
       <p class="sub">กิจกรรม Esports จากหน้าจอ สู่สนามจริง: Open House 2026</p>
     </div>
     <div class="ctl">
-      <select id="gameFilter" aria-label="Filter by competition"><option value="">ทุกรายการ / All games</option></select>
+      <select id="gameFilter" aria-label="กรองตามรายการแข่งขัน"><option value="">ทุกรายการแข่งขัน</option></select>
+      <select id="schoolFilter" aria-label="กรองตามสถานศึกษา"><option value="">ทุกสถานศึกษา</option></select>
+      <select id="sessionFilter" aria-label="กรองตามรอบเวลา"><option value="">ทุกรอบเวลา</option></select>
       <button id="refreshBtn" type="button">รีเฟรช</button>
       <button id="themeBtn" type="button">◐</button>
     </div>
@@ -259,7 +262,7 @@
       <table class="data" id="roster">
         <thead><tr>
           <th style="width:3rem">#</th><th>ชื่อ</th><th>นามสกุล</th>
-          <th>รายการแข่งขัน</th><th>รอบเวลา</th>
+          <th>สถานศึกษา</th><th>รายการแข่งขัน</th><th>รอบเวลา</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -285,12 +288,12 @@ const CONFIG = {
 
   // ตำแหน่งคอลัมน์ในแท็บ list (เริ่มนับจาก 0)
   cols: {
-    title:  0,   // A คำนำหน้าชื่อ
-    name:   1,   // B ชื่อ - นามสกุล (ปิดบังมาจากสูตรในชีตแล้ว)
+    name:   0,   // A ชื่อ (ปิดบังนามสกุลมาจากสูตรในชีตแล้ว)
+    school: 1,   // B โรงเรียน
     game:   2,   // C รายการแข่งขัน
     session:3,   // D เวลา
-    year:   98,  // ไม่มีในแท็บนี้
-    school: 99   // ไม่มีในแท็บนี้
+    title:  98,  // ไม่มีในแท็บนี้ (ตัดคำนำหน้าออกจากชีตแล้ว)
+    year:   99   // ไม่มีในแท็บนี้
   },
 
   // จำนวนรายชื่อต่อหน้า
@@ -435,6 +438,19 @@ function drawKpis(rows, all) {
 
 let ALL_ROWS = [];
 
+/* เติมตัวเลือกใน dropdown จากข้อมูลจริง โดยคงค่าที่ผู้ใช้เลือกไว้ */
+function fillFilter(id, colIndex, allLabel) {
+  const sel = $(id);
+  if (!sel) return;
+  const keep = sel.value;
+  const vals = [...new Set(ALL_ROWS.map(r => clean(r[colIndex])).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'th'));
+  sel.innerHTML = `<option value="">${allLabel}</option>` +
+    vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  if (vals.includes(keep)) sel.value = keep;
+}
+
+
 /* "นายสมชาย ใจดี" -> { first: "สมชาย", last: "ใจดี" }
    คำนำหน้า (นาย/นางสาว/ด.ช. ฯลฯ) ถูกตัดออกจากชื่อจริง */
 function splitName(r) {
@@ -475,8 +491,11 @@ function drawRoster(rows) {
 
   const people = rows.map(r => {
     const nm = splitName(r);
-    return { ...nm, game: clean(r[CONFIG.cols.game]), session: clean(r[CONFIG.cols.session]) };
-  }).filter(p => !q || [p.first, p.game, p.session].some(v => v.toLowerCase().includes(q)));
+    return { ...nm,
+      school:  clean(r[CONFIG.cols.school]),
+      game:    clean(r[CONFIG.cols.game]),
+      session: clean(r[CONFIG.cols.session]) };
+  }).filter(p => !q || [p.first, p.school, p.game, p.session].some(v => v.toLowerCase().includes(q)));
 
   people.sort((a, b) =>
     a.game.localeCompare(b.game, 'th') ||
@@ -495,15 +514,15 @@ function drawRoster(rows) {
       <td class="num" style="color:var(--text-muted)">${from + i + 1}</td>
       <td>${esc((p.title ? p.title + ' ' : '') + p.first)}</td>
       <td style="color:var(--text-secondary)">${esc(maskSurname(p.last))}</td>
+      <td style="color:var(--text-secondary)">${esc(p.school)}</td>
       <td>${esc(p.game)}</td>
       <td>${esc(p.session)}</td>
     </tr>`).join('')
-    || `<tr><td colspan="5" style="color:var(--text-muted)">ไม่พบรายการที่ค้นหา</td></tr>`;
+    || `<tr><td colspan="6" style="color:var(--text-muted)">ไม่พบรายการที่ค้นหา</td></tr>`;
 
-  // เติมแถวว่างในหน้าสุดท้าย ให้ทุกหน้าสูงเท่ากัน เลย์เอาต์จะได้ไม่ขยับ
   if (people.length > size && slice.length < size) {
     tbodyEl.insertAdjacentHTML('beforeend',
-      `<tr class="filler"><td colspan="5">&nbsp;</td></tr>`.repeat(size - slice.length));
+      `<tr class="filler"><td colspan="6">&nbsp;</td></tr>`.repeat(size - slice.length));
   }
 
   $('rosterPager').innerHTML = people.length > size
@@ -520,8 +539,13 @@ function drawRoster(rows) {
 }
 
 function render() {
-  const pick = $('gameFilter').value;
-  const rows = pick ? ALL_ROWS.filter(r => clean(r[CONFIG.cols.game]) === pick) : ALL_ROWS;
+  const g = $('gameFilter').value;
+  const sc = $('schoolFilter') ? $('schoolFilter').value : '';
+  const se = $('sessionFilter') ? $('sessionFilter').value : '';
+  const rows = ALL_ROWS.filter(r =>
+    (!g  || clean(r[CONFIG.cols.game])    === g) &&
+    (!sc || clean(r[CONFIG.cols.school])  === sc) &&
+    (!se || clean(r[CONFIG.cols.session]) === se));
   drawRoster(rows);
   drawKpis(rows, ALL_ROWS.length);
   drawBars($('byGame'), tally(rows, CONFIG.cols.game));
@@ -554,11 +578,9 @@ async function load() {
     }
     ALL_ROWS = rows;
 
-    const sel = $('gameFilter'), keep = sel.value;
-    const games = [...new Set(rows.map(r => clean(r[CONFIG.cols.game])))].sort();
-    sel.innerHTML = '<option value="">ทุกรายการ / All games</option>' +
-      games.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
-    if (games.includes(keep)) sel.value = keep;
+    fillFilter('gameFilter',    CONFIG.cols.game,    'ทุกรายการแข่งขัน');
+    fillFilter('schoolFilter',  CONFIG.cols.school,  'ทุกสถานศึกษา');
+    fillFilter('sessionFilter', CONFIG.cols.session, 'ทุกรอบเวลา');
 
     $('errBox').hidden = true;
     render();
@@ -573,7 +595,10 @@ async function load() {
 }
 
 $('refreshBtn').addEventListener('click', load);
-$('gameFilter').addEventListener('change', () => { PAGE = 1; render(); });
+['gameFilter','schoolFilter','sessionFilter'].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('change', () => { PAGE = 1; render(); });
+});
 if ($('search')) $('search').addEventListener('input', () => { PAGE = 1; render(); });
 if ($('rosterPager')) $('rosterPager').addEventListener('click', e => {
   const b = e.target.closest('button[data-page]');
